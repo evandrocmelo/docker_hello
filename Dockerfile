@@ -1,45 +1,27 @@
+# Estágio de build (instala dependências)
 FROM python:3.11-slim as builder
 
-# Definir diretório de trabalho
 WORKDIR /app
-
-# Copiar apenas os arquivos de requisitos primeiro para aproveitar o cache de camadas
 COPY requirements.txt .
-
-# Instalar dependências em uma camada separada
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Segunda etapa - imagem final
+# --- Estágio final (otimizado para produção) ---
 FROM python:3.11-slim
 
-# Criar usuário não-root para executar a aplicação
+# 1. Cria um usuário não-root (segurança)
 RUN adduser --disabled-password --gecos "" appuser
 
-# Definir diretório de trabalho
-WORKDIR /app
-
-# Copiar dependências da etapa de construção
+# 2. Copia TUDO do builder (bibliotecas + binários)
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin/gunicorn /usr/local/bin/gunicorn
 
-# Copiar o código da aplicação
+# 3. Configura o ambiente
+WORKDIR /app
 COPY app.py .
 
-# Definir propriedade dos arquivos para o usuário não-root
-RUN chown -R appuser:appuser /app && \
-    chmod -R 755 /app
-
-# Mudar para o usuário não-root
+# 4. Ajusta permissões (evita erros de acesso)
+RUN chown -R appuser:appuser /app
 USER appuser
 
-# Definir variáveis de ambiente
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV FLASK_APP=app.py
-ENV FLASK_ENV=production
-ENV PORT=5000
-
-# Expor a porta que a aplicação utilizará
-EXPOSE $PORT
-
-# Comando para iniciar a aplicação com Gunicorn (para produção)
-CMD gunicorn --bind 0.0.0.0:$PORT app:app
+# 5. Usa a porta 8080 (padrão do Render)
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"]
